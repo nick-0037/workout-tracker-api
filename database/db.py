@@ -45,7 +45,7 @@ def create_tables(conn):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
-                password_hash TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -171,6 +171,16 @@ def send_basic_exercises(conn):
     print("✅ Ejercicios basicos insertados exitosamente")
 
 
+def get_db():
+    """Dependency to FastAPI: open and close connection per-request"""
+    db_path = "database/app.db"
+    conn = connect_db(db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 def create_demo_user(conn):
     """Usuario de prueba"""
 
@@ -216,8 +226,9 @@ def show_minimal_info(conn):
     print(f"  • workout_sessions (completed workouts)")
     print(f"  • session_exercises (progress tracking)")
 
-def main ():
-    """"Setup mínimo según requirements"""
+
+def main():
+    """ "Setup mínimo según requirements"""
     print("🚀 SETUP MÍNIMO - WORKOUT TRACKER")
     print("-" * 40)
 
@@ -249,6 +260,7 @@ def main ():
     print("  • Create/update/delete workout plans")
     print("  • Track progress")
     print("  • Generate reports on past workouts")
+
 
 if __name__ == "__main__":
     main()
