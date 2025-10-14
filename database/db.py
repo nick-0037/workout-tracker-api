@@ -2,16 +2,15 @@ import sqlite3
 import os
 import hashlib
 from datetime import datetime
-
+from api.config import ENV, DB_PATH
 
 def setup_db():
     """Crea la carpeta y configura la base de datos"""
+    if ENV == "test":
+        return 
 
     # Crear carpeta database si no existe
     os.makedirs("database", exist_ok=True)
-
-    # Ruta del archivo de base de datos
-    DB_PATH = "database/app.db"
 
     print(f"📁 Carpeta creada: database/")
     print(f"🗄️  Base de datos: {DB_PATH}")
@@ -232,9 +231,10 @@ def main():
     print("🚀 SETUP MÍNIMO - WORKOUT TRACKER")
     print("-" * 40)
 
-    # Crear esquema mínimo
-    db_path = setup_db()
-    conn = connect_db(db_path)
+    if ENV != "test":
+        setup_db()
+    
+    conn = connect_db(DB_PATH)
     if conn is None:
         return
 
@@ -242,19 +242,16 @@ def main():
     if conn is None:
         return
 
-    # Agregar ejercicios básicos
     send_basic_exercises(conn)
 
-    # Usuario demo
     create_demo_user(conn)
 
-    # Info
     show_minimal_info(conn)
 
     conn.close()
 
     print(f"\n✅ Setup mínimo completado!")
-    print(f"📂 Base de datos: {db_path}")
+    print(f"📂 Base de datos: {DB_PATH}")
     print("\n🎯 LISTO PARA:")
     print("  • User auth (sign-up, login, JWT)")
     print("  • Create/update/delete workout plans")
