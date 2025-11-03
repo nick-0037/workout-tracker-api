@@ -9,5 +9,5 @@ class WorkoutPlanBase(BaseModel):
 class WorkoutPlanCreate(WorkoutPlanBase):
     pass
 
-class workoutPlanResponse(WorkoutPlanBase):
+class WorkoutPlanResponse(WorkoutPlanBase):
     id: int
