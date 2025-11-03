@@ -1,43 +1,42 @@
 import sqlite3
 import os
 import hashlib
-from datetime import datetime
 from api.config import ENV, DB_PATH
 
 def setup_db():
-    """Crea la carpeta y configura la base de datos"""
+    """Creates the folder and sets up the database"""
     if ENV == "test":
         return 
 
-    # Crear carpeta database si no existe
+    # Create database folder if it doesn't exist
     os.makedirs("database", exist_ok=True)
 
-    print(f"📁 Carpeta creada: database/")
-    print(f"🗄️  Base de datos: {DB_PATH}")
+    print(f"📁 Folder created: database/")
+    print(f"🗄️  Database: {DB_PATH}")
 
     return DB_PATH
 
 
 def connect_db(db_path):
-    """Conecta a la base de datos SQLite"""
+    """Connects to the SQLite database"""
 
     try:
         conn = sqlite3.connect(db_path)
 
-        conn.row_factory = sqlite3.Row  # Permite acceder a las columnas por nombre
+        conn.row_factory = sqlite3.Row  # Allows column access by name
 
-        print("✅ Conexión a la base de datos exitosa")
+        print("✅ Database connection successful")
         return conn
     except sqlite3.Error as e:
-        print(f"❌ Error al conectar a la base de datos: {e}")
+        print(f"❌ Error connecting to database: {e}")
         return None
 
 
 def create_tables(conn):
-    """Crea las tablas iniciales en la base de datos"""
+    """Creates the initial tables in the database"""
 
     try:
-        # Tabla de usuarios
+        # Users table
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -51,7 +50,7 @@ def create_tables(conn):
             """
         )
 
-        # tablas de ejercicios (catalogos)
+        # Exercises table (catalog)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS exercises (
@@ -65,7 +64,7 @@ def create_tables(conn):
             """
         )
 
-        # tabla de rutinas (planes de entrenamiento)
+        # Workout plans table
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS workout_plans (
@@ -80,7 +79,7 @@ def create_tables(conn):
             """
         )
 
-        # tabla de ejercicios en rutinas (relación muchos a muchos)
+        # Exercises in workout plans table (many-to-many relationship)
         conn.execute(
             """
                 CREATE TABLE IF NOT EXISTS workout_plan_exercises (
@@ -97,7 +96,7 @@ def create_tables(conn):
             """
         )
 
-        # tabla de sesiones de rutinas (entrenamientos completados - para tracking y reportes)
+        # Workout sessions table (completed workouts - for tracking and reports)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS workout_sessions (
@@ -114,7 +113,7 @@ def create_tables(conn):
             """
         )
 
-        # tabla de sesiones de ejercicios (ejercicios realizados - para tracking)
+        # Session exercises table (performed exercises - for tracking)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS sessions_exercises (
@@ -132,16 +131,16 @@ def create_tables(conn):
         )
 
         conn.commit()
-        print("✅ Tablas creadas exitosamente")
+        print("✅ Tables created successfully")
 
         return conn
     except sqlite3.Error as e:
-        print(f"❌ Error al crear las tablas: {e}")
+        print(f"❌ Error creating tables: {e}")
         return None
 
 
 def send_basic_exercises(conn):
-    """Solo ejercicios basicos necesarios"""
+    """Insert only basic necessary exercises"""
 
     basic_exercises = [
         # STRENGTH
@@ -167,11 +166,11 @@ def send_basic_exercises(conn):
     )
 
     conn.commit()
-    print("✅ Ejercicios basicos insertados exitosamente")
+    print("✅ Basic exercises inserted successfully")
 
 
 def get_db():
-    """Dependency to FastAPI: open and close connection per-request"""
+    """Dependency for FastAPI: open and close connection per-request"""
     db_path = "database/app.db"
     conn = connect_db(db_path)
     try:
@@ -181,7 +180,7 @@ def get_db():
 
 
 def create_demo_user(conn):
-    """Usuario de prueba"""
+    """Demo user"""
 
     password_hash = hashlib.sha256("demo123".encode()).hexdigest()
     try:
@@ -194,19 +193,18 @@ def create_demo_user(conn):
         )
 
         conn.commit()
-        print("✅ Usuario demo creado exitosamente")
+        print("✅ Demo user created successfully")
     except sqlite3.IntegrityError:
-        print("⚠️  El usuario demo ya existe")
+        print("⚠️  Demo user already exists")
 
 
 def show_minimal_info(conn):
-    """Info básica de la DB"""
+    """Basic DB info"""
 
     print("\n" + "=" * 40)
-    print("📊 BASE DE DATOS CREADA")
+    print("📊 DATABASE CREATED")
     print("=" * 40)
 
-    # Contar usuarios y ejercicios
     users_count = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()[
         "count"
     ]
@@ -214,10 +212,10 @@ def show_minimal_info(conn):
         "SELECT COUNT(*) as count FROM exercises"
     ).fetchone()["count"]
 
-    print(f"👥 Usuarios: {users_count}")
-    print(f"🏋️  Ejercicios disponibles: {exercises_count}")
+    print(f"👥 Users: {users_count}")
+    print(f"🏋️  Available exercises: {exercises_count}")
 
-    print(f"\n📋 TABLAS CREADAS:")
+    print(f"\n📋 TABLES CREATED:")
     print(f"  • users (authentication)")
     print(f"  • exercises (exercise catalog)")
     print(f"  • workout_plans (user workout plans)")
@@ -227,8 +225,8 @@ def show_minimal_info(conn):
 
 
 def main():
-    """ "Setup mínimo según requirements"""
-    print("🚀 SETUP MÍNIMO - WORKOUT TRACKER")
+    """Minimal setup according to requirements"""
+    print("🚀 MINIMAL SETUP - WORKOUT TRACKER")
     print("-" * 40)
 
     if ENV != "test":
@@ -250,9 +248,9 @@ def main():
 
     conn.close()
 
-    print(f"\n✅ Setup mínimo completado!")
-    print(f"📂 Base de datos: {DB_PATH}")
-    print("\n🎯 LISTO PARA:")
+    print(f"\n✅ Minimal setup completed!")
+    print(f"📂 Database: {DB_PATH}")
+    print("\n🎯 READY FOR:")
     print("  • User auth (sign-up, login, JWT)")
     print("  • Create/update/delete workout plans")
     print("  • Track progress")
