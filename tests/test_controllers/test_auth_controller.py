@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 client = TestClient(app)
 
 
-def test_create_user_endpoint(monkeypatch):
+def test_create_user(monkeypatch):
     # Mock service
     async def fake_create_user(self, user_data):
         return UserResponse(
@@ -60,7 +60,7 @@ def test_create_user_with_existing_email_returns_400(monkeypatch):
     assert "Email already registered" in response.json()["detail"]
 
 
-def test_login_user_endpoint(monkeypatch):
+def test_login_user(monkeypatch):
     # Mock service
     async def fake_login(self, credentials):
         return Token(access_token="fake-jwt-token", token_type="bearer")
