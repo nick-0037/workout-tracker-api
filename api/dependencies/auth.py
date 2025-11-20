@@ -2,19 +2,20 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from api.config import SECRET_KEY, ALGORITHM
+from api.models.user import TokenData
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-        if user_id is None:
+        token_data = TokenData(**payload)
+        if token_data.sub is None:
             raise HTTPException(
                 status_code=401, detail="Invalid authentication credentials"
             )
-        return int(user_id)
+        return int(token_data.sub)
     except JWTError:
         raise HTTPException(
             status_code=401, detail="Invalid authentication credentials"
