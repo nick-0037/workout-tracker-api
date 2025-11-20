@@ -46,8 +46,7 @@ class AuthService:
 
         # Create JWT
         token_data = {
-            "user_id": user.id,
-            "email": user.email,
+            "sub": str(user.id),
             "exp": datetime.now(timezone.utc)
             + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
         }
