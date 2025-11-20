@@ -8,24 +8,24 @@ from fastapi import HTTPException, status
 client = TestClient(app)
 
 
-def test_get_all_exercise_endpoint(monkeypatch):
+def test_get_all_exercises(monkeypatch):
     # Mock service
     async def fake_get_all_exercises(self):
         return [
-            {
-                "id": 1,
-                "name": "Push Up",
-                "description": "A basic push up exercise",
-                "category": "Strength",
-                "muscle_group": "Chest",
-            },
-            {
-                "id": 2,
-                "name": "Squat",
-                "description": "A basic squat exercise",
-                "category": "Strength",
-                "muscle_group": "Legs",
-            },
+            ExerciseResponse(
+                id=1,
+                name="Push Up",
+                description="A basic push up exercise",
+                category="Strength",
+                muscle_group="Chest",
+            ),
+            ExerciseResponse(
+                id=2,
+                name="Squat",
+                description="A basic squat exercise",
+                category="Strength",
+                muscle_group="Legs",
+            ),
         ]
 
     monkeypatch.setattr(ExerciseService, "get_all_exercises", fake_get_all_exercises)
@@ -40,7 +40,7 @@ def test_get_all_exercise_endpoint(monkeypatch):
     assert data[1]["name"] == "Squat"
 
 
-def test_get_exercise_by_id_endpoint(monkeypatch):
+def test_get_exercise_by_id(monkeypatch):
     # Mock service
     async def fake_get_exercise_by_id(self, exercise_id):
         return ExerciseResponse(
