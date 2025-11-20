@@ -28,5 +28,4 @@ class Token(BaseModel):
     
 class TokenData(BaseModel):
     """Data extracted from JWT Token"""
-    user_id: Optional[int] = None
-    email: Optional[str] = None
+    sub: Optional[int] = None
