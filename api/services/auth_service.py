@@ -30,7 +30,7 @@ class AuthService:
 
     async def login(self, credentials: UserLogin) -> Token:
         user = await self.user_repository.get_user_by_email(credentials.email)
-        print(f"user fetched for login: {user}")
+
         if not user:
             raise AppException("Invalid credentials", 401)
 
