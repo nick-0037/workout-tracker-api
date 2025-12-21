@@ -1,10 +1,10 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from api.config import SECRET_KEY, ALGORITHM
 from api.models.user import TokenData
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login/oauth")
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
