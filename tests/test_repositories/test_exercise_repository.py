@@ -1,65 +1,83 @@
 import pytest
-from api.models.exercise import ExerciseCreate, ExerciseResponse
-from api.repositories.exercise_repository import ExerciseRepository
+import pytest_asyncio
 
-@pytest.mark.asyncio
-async def test_get_all_exercises_return_list(test_db):
-    # Arrange
-    repo = ExerciseRepository(test_db)
-    
-    # Act
-    exercises = await repo.get_all_exercises()
-    
-    # Assert
-    assert isinstance(exercises, list)
-    assert len(exercises) > 0
-    assert all(isinstance(ex, ExerciseResponse) for ex in exercises)
-
-@pytest.mark.asyncio
-async def test_get_all_exercises_empty_db(test_db):
-    # Arrange
-    repo = ExerciseRepository(test_db)
-    
-    test_db.execute("DELETE FROM exercises")  # Clear the table for this test
-    test_db.commit()
-    
-    # Act
-    exercises = await repo.get_all_exercises()
-    
-    # Assert
-    assert isinstance(exercises, list)
-    assert len(exercises) == 0    
-
-@pytest.mark.asyncio
-async def test_get_exercise_by_id_returns_exercise(test_db):
-    # Arrange
-    repo = ExerciseRepository(test_db)
-    
-    cursor = test_db.execute(
-        "INSERT INTO exercises (name, description, category, muscle_group) VALUES (?, ?, ?, ?)",
-        ("Push Up", "A basic push up exercise", "Strength", "Chest"),
+@pytest_asyncio.fixture
+async def setup_test_user(test_db_session):
+    await test_db_session.execute(
+        """
+        INSERT OR IGNORE INTO users (id, username, email, password_hash)
+        VALUES (1, 'test_user', 'testuser@example.com', 'hashed_pass')
+        """
     )
-    test_db.commit()
-    exercise_id = cursor.lastrowid
-    
+
+    await test_db_session.commit()
+
+    return 1
+
+
+@pytest.mark.asyncio
+async def test_get_all_exercises_success(
+    test_db_session, real_exercise_repo, setup_test_user
+):
+    # Arrange
+    user_id = setup_test_user
+
+    await test_db_session.execute(
+        """
+        INSERT INTO exercises (user_id, name, description, category, muscle_group)
+        VALUES (?, 'Push Up', 'A basic push up exercise', 'Strength', 'Chest'),
+        (?, 'Pull Up', 'A basic pull up exercise', 'Strength', 'Back')
+        """,
+        (user_id, user_id),
+    )
+
+    await test_db_session.commit()
+
     # Act
-    exercise = await repo.get_exercise_by_id(exercise_id)
-    
+    exercises = await real_exercise_repo.get_all_exercises(user_id=user_id)
+
+    # Assert
+    assert len(exercises) == 2
+    assert exercises[0]["name"] == "Push Up"
+    assert exercises[1]["name"] == "Pull Up"
+
+
+@pytest.mark.asyncio
+async def test_get_exercise_by_id_found(
+    test_db_session, real_exercise_repo, setup_test_user
+):
+    # Arrange
+    user_id = setup_test_user
+
+    await test_db_session.execute(
+        """
+        INSERT INTO exercises (id, user_id, name, description, category, muscle_group)
+        VALUES (1, ?, 'Push Up',  'A basic push up exercise', 'Strength', 'Chest')
+        """,
+        (user_id,),
+    )
+
+    await test_db_session.commit()
+
+    # Act
+    exercise = await real_exercise_repo.get_exercise_by_id(
+        exercise_id=1, user_id=user_id
+    )
+
     # Assert
     assert exercise is not None
-    assert isinstance(exercise, ExerciseResponse)
-    assert exercise.id == exercise_id
-    assert exercise.name == "Push Up"
-    assert exercise.description == "A basic push up exercise"
+    assert exercise["id"] == 1
+    assert exercise["name"] == "Push Up"
+
 
 @pytest.mark.asyncio
-async def test_get_exercise_by_id_not_found(test_db):
-    # Arrange
-    repo = ExerciseRepository(test_db)
-    
+async def test_get_exercise_by_id_not_found(
+    test_db_session, real_exercise_repo, setup_test_user
+):
     # Act
-    exercise = await repo.get_exercise_by_id(12)
-    
+    exercise = await real_exercise_repo.get_exercise_by_id(
+        exercise_id=99, user_id=setup_test_user
+    )
+
     # Assert
     assert exercise is None
-    

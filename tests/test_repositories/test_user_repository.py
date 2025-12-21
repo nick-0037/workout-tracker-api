@@ -1,76 +1,69 @@
 import pytest
-from api.models.user import UserCreate, UserResponse
-from api.repositories.user_repository import UserRepository
+import pytest_asyncio
+import sqlite3
+
+
+@pytest_asyncio.fixture
+async def setup_test_user(test_db_session):
+    await test_db_session.execute(
+        """
+        INSERT OR IGNORE INTO users (id, username, email, password_hash)
+        VALUES (1, 'test_user', 'testuser@example.com', 'hashed_pass')
+        """
+    )
+
+    await test_db_session.commit()
+
+    return 1
 
 
 @pytest.mark.asyncio
-async def test_create_user_inserts_into_db(test_db):
-    # Arrange
-    repo = UserRepository(test_db)
-
+async def test_create_user_success(test_db_session, real_user_repo):
     # Act
-    user = await repo.create_user(
-        username="testuser", email="test@example.com", password="pass123"
+    user = await real_user_repo.create_user(
+        username="test_user", email="testuser@example.com", password_hash="hashed_pass"
     )
 
     # Assert
-    assert isinstance(user, UserResponse)
-    assert user.username == "testuser"
-    assert user.email == "test@example.com"
+    assert user["username"] == "test_user"
+    assert "id" in user
 
-    cursor = test_db.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = 'testuser'")
-    row = cursor.fetchone()
+    cursor = await test_db_session.execute(
+        "SELECT * FROM users WHERE email = 'testuser@example.com'"
+    )
+    row = await cursor.fetchone()
     assert row is not None
+    assert row["username"] == "test_user"
 
 
 @pytest.mark.asyncio
-async def test_create_user_with_duplicate_email_fails(test_db):
-    # Arrange
-    repo = UserRepository(test_db)
-    await repo.create_user(
-        username="testuser1",
-        email="duplicate@example.com",
-        password="pass123",
-    )
-
+async def test_create_user_with_duplicate_email_fails(real_user_repo, setup_test_user):
     # Act & Assert
-    with pytest.raises(Exception):
-        await repo.create_user(
-            username="testuser2",
-            email="duplicate@example.com",
-            password="pass123",
+    with pytest.raises(sqlite3.IntegrityError) as exc_info:
+        await real_user_repo.create_user(
+            username="testuser2", email="testuser@example.com", password_hash="any_hash"
         )
 
+    assert "UNIQUE constraint failed" in str(exc_info.value)
+
+
 @pytest.mark.asyncio
-async def test_get_user_by_email_returns_user_when_exists(test_db):
-    # Arrange
-    repo = UserRepository(test_db)
-    test_db.execute(
-		"INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
-		("john", "john@example.com", "pass123")
-	)
-    test_db.commit()
-    
+async def test_get_user_by_email_returns_user_when_exists(
+    real_user_repo, setup_test_user
+):
     # Act
-    user = await repo.get_user_by_email("john@example.com")
-    
+    user = await real_user_repo.get_user_by_email("testuser@example.com")
+
     # Assert
     assert user is not None
-    assert user.username == "john"
-    assert user.email == "john@example.com"
-    
+    assert user["username"] == "test_user"
+    assert user["email"] == "testuser@example.com"
+
+
 @pytest.mark.asyncio
-async def test_get_user_by_email_returns_none_when_not_exists(test_db):
-    # Arrange
-    repo = UserRepository(test_db)
-    
+async def test_get_user_by_email_returns_none_when_not_exists(real_user_repo):
     # Act
-    user = await repo.get_user_by_email("nonexistent@example.com")
-    
+    user = await real_user_repo.get_user_by_email("nonexistent@example.com")
+
     # Assert
     assert user is None
-    
-# Additional tests can be added for edge cases and error handling
-    
-    
