@@ -1,43 +1,54 @@
 import sqlite3
+import aiosqlite
 import os
-import hashlib
+from api.utils.security import hash_password
 from api.config import ENV, DB_PATH
+from datetime import datetime
+
+# Register adapters and converters (sync)
+sqlite3.register_adapter(datetime, lambda dt: dt.isoformat())
+sqlite3.register_converter("timestamp", lambda s: datetime.fromisoformat(s.decode()))
+
 
 def setup_db():
-    """Creates the folder and sets up the database"""
+    """Ensure folder exists and report DB path (sync setup)"""
     if ENV == "test":
-        return 
+        return
 
-    # Create database folder if it doesn't exist
     os.makedirs("database", exist_ok=True)
-
     print(f"📁 Folder created: database/")
     print(f"🗄️  Database: {DB_PATH}")
-
     return DB_PATH
 
 
-def connect_db(db_path):
-    """Connects to the SQLite database"""
-
+# ---------- Async runtime connection ----------
+async def connect_db(db_path: str):
+    """Create and return an active aiosqlite.Connection (async)."""
     try:
-        conn = sqlite3.connect(db_path)
-
-        conn.row_factory = sqlite3.Row  # Allows column access by name
-
-        print("✅ Database connection successful")
+        conn = await aiosqlite.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        conn.row_factory = aiosqlite.Row
+        print("✅ Async database connection successful")
         return conn
-    except sqlite3.Error as e:
-        print(f"❌ Error connecting to database: {e}")
+    except aiosqlite.Error as e:
+        print(f"❌ Error connecting to async DB: {e}")
         return None
 
 
-def create_tables(conn):
-    """Creates the initial tables in the database"""
-
+async def get_db():
+    """FastAPI dependency: yield an active aiosqlite.Connection and close it."""
+    conn = await connect_db(DB_PATH)
     try:
-        # Users table
-        conn.execute(
+        yield conn
+    finally:
+        if conn:
+            await conn.close()
+
+
+# ----------Sync helpers (Used only for migrations/seeding) ----------
+def create_tables_sync(conn):
+    """Create tables using sync (for initial setup)."""
+    try:
+        conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,27 +57,17 @@ def create_tables(conn):
                 password_hash TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-
-        # Exercises table (catalog)
-        conn.execute(
-            """
+            );
             CREATE TABLE IF NOT EXISTS exercises (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 description TEXT,
                 category TEXT NOT NULL,
                 muscle_group TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """
-        )
-
-        # Workout plans table
-        conn.execute(
-            """
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            );
             CREATE TABLE IF NOT EXISTS workout_plans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -75,14 +76,8 @@ def create_tables(conn):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-            )
-            """
-        )
-
-        # Exercises in workout plans table (many-to-many relationship)
-        conn.execute(
-            """
-                CREATE TABLE IF NOT EXISTS workout_plan_exercises (
+            );
+            CREATE TABLE IF NOT EXISTS workout_plan_exercises (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 workout_plan_id INTEGER NOT NULL,
                 exercise_id INTEGER NOT NULL,
@@ -92,30 +87,17 @@ def create_tables(conn):
                 notes TEXT,
                 FOREIGN KEY (workout_plan_id) REFERENCES workout_plans (id) ON DELETE CASCADE,
                 FOREIGN KEY (exercise_id) REFERENCES exercises (id)
-            )
-            """
-        )
-
-        # Workout sessions table (completed workouts - for tracking and reports)
-        conn.execute(
-            """
+            );
             CREATE TABLE IF NOT EXISTS workout_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 workout_plan_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
-                scheduled_date TIMESTAMP,
-                completed_at TIMESTAMP,
-                status TEXT DEFAULT 'completed',
+                scheduled_date TIMESTAMP NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
                 notes TEXT,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
                 FOREIGN KEY (workout_plan_id) REFERENCES workout_plans (id)
-            )
-            """
-        )
-
-        # Session exercises table (performed exercises - for tracking)
-        conn.execute(
-            """
+            );
             CREATE TABLE IF NOT EXISTS sessions_exercises (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL,
@@ -126,135 +108,94 @@ def create_tables(conn):
                 notes TEXT,
                 FOREIGN KEY (session_id) REFERENCES workout_sessions (id) ON DELETE CASCADE,
                 FOREIGN KEY (exercise_id) REFERENCES exercises (id)
-            )
+            );
             """
         )
 
         conn.commit()
-        print("✅ Tables created successfully")
-
+        print("✅ Tables created successfully (sync)")
         return conn
     except sqlite3.Error as e:
-        print(f"❌ Error creating tables: {e}")
+        print(f"❌ Error creating tables (sync): {e}")
         return None
 
 
-def send_basic_exercises(conn):
-    """Insert only basic necessary exercises"""
-
+def send_basic_exercises_sync(conn):
     basic_exercises = [
-        # STRENGTH
-        ("Push-ups", "Bodyweight chest exercise", "strength", "chest"),
-        ("Squats", "Lower body exercise", "strength", "legs"),
-        ("Pull-ups", "Back exercise", "strength", "back"),
-        ("Bench Press", "Chest press", "strength", "chest"),
-        ("Deadlift", "Full body lift", "strength", "back"),
-        # CARDIO
-        ("Running", "Cardio exercise", "cardio", "full_body"),
-        ("Cycling", "Low impact cardio", "cardio", "legs"),
-        # FLEXIBILITY
-        ("Stretching", "Flexibility work", "flexibility", "full_body"),
+        ("Push-ups", "Bodyweight chest exercise", "strength", "chest", 1),
+        ("Squats", "Lower body exercise", "strength", "legs", 1),
+        ("Pull-ups", "Back exercise", "strength", "back", 1),
+        ("Bench Press", "Chest press", "strength", "chest", 1),
+        ("Deadlift", "Full body lift", "strength", "back", 1),
+        ("Running", "Cardio exercise", "cardio", "full_body", 1),
+        ("Cycling", "Low impact cardio", "cardio", "legs", 1),
+        ("Stretching", "Flexibility work", "flexibility", "full_body", 1),
     ]
 
     conn.executemany(
         """
-        INSERT OR IGNORE INTO exercises (name, description, category, muscle_group)
-        VALUES (?, ?, ?, ?)
-        
+        INSERT OR IGNORE INTO exercises (name, description, category, muscle_group, user_id)
+        VALUES (?, ?, ?, ?, ?)
         """,
         basic_exercises,
     )
-
     conn.commit()
     print("✅ Basic exercises inserted successfully")
 
 
-def get_db():
-    """Dependency for FastAPI: open and close connection per-request"""
-    db_path = "database/app.db"
-    conn = connect_db(db_path)
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-
-def create_demo_user(conn):
-    """Demo user"""
-
-    password_hash = hashlib.sha256("demo123".encode()).hexdigest()
+def create_demo_user_sync(conn):
+    password_hash = hash_password("demo123")
     try:
         conn.execute(
             """
-            INSERT INTO users (username, email, password_hash)
+            INSERT OR IGNORE INTO users (username, email, password_hash)
             VALUES (?, ?, ?)
             """,
             ("demo", "demo@workout.com", password_hash),
         )
-
         conn.commit()
-        print("✅ Demo user created successfully")
+        print("✅ Demo user created successfully (sync)")
     except sqlite3.IntegrityError:
-        print("⚠️  Demo user already exists")
+        print("⚠️  Demo user already exists (sync)")
 
 
-def show_minimal_info(conn):
-    """Basic DB info"""
+def show_minimal_info_sync(conn):
+    cur = conn.execute("SELECT COUNT(*) as count FROM users")
+    users_count = cur.fetchone()[0]
+    cur = conn.execute("SELECT COUNT(*) as count FROM exercises")
+    exercises_count = cur.fetchone()[0]
 
     print("\n" + "=" * 40)
-    print("📊 DATABASE CREATED")
+    print("📊 DATABASE CREATED (sync)")
     print("=" * 40)
-
-    users_count = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()[
-        "count"
-    ]
-    exercises_count = conn.execute(
-        "SELECT COUNT(*) as count FROM exercises"
-    ).fetchone()["count"]
-
     print(f"👥 Users: {users_count}")
     print(f"🏋️  Available exercises: {exercises_count}")
 
-    print(f"\n📋 TABLES CREATED:")
-    print(f"  • users (authentication)")
-    print(f"  • exercises (exercise catalog)")
-    print(f"  • workout_plans (user workout plans)")
-    print(f"  • workout_plan_exercises (exercises in plans)")
-    print(f"  • workout_sessions (completed workouts)")
-    print(f"  • session_exercises (progress tracking)")
 
-
+# ---------- Sync main for setup ----------
 def main():
-    """Minimal setup according to requirements"""
+    """Run DB setup/seed synchronously (called as script)."""
     print("🚀 MINIMAL SETUP - WORKOUT TRACKER")
     print("-" * 40)
 
     if ENV != "test":
         setup_db()
-    
-    conn = connect_db(DB_PATH)
+
+    conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+    conn.row_factory = sqlite3.Row
+
+    conn = create_tables_sync(conn)
     if conn is None:
         return
 
-    conn = create_tables(conn)
-    if conn is None:
-        return
-
-    send_basic_exercises(conn)
-
-    create_demo_user(conn)
-
-    show_minimal_info(conn)
+    send_basic_exercises_sync(conn)
+    create_demo_user_sync(conn)
+    show_minimal_info_sync(conn)
 
     conn.close()
 
-    print(f"\n✅ Minimal setup completed!")
+    print("\n✅ Minimal setup completed!")
     print(f"📂 Database: {DB_PATH}")
-    print("\n🎯 READY FOR:")
-    print("  • User auth (sign-up, login, JWT)")
-    print("  • Create/update/delete workout plans")
-    print("  • Track progress")
-    print("  • Generate reports on past workouts")
 
 
 if __name__ == "__main__":
