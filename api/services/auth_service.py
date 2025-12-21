@@ -1,9 +1,10 @@
 from api.models.user import UserCreate, UserResponse, UserLogin, Token
-from api.utils.security import hash_password
-from fastapi import HTTPException, status
+from api.utils.security import hash_password, verify_password
 from datetime import datetime, timedelta, timezone
-from jose import JWTError, jwt
+from jose import jwt
 from api.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from api.core.error_handler import AppException
+
 
 class AuthService:
     def __init__(self, user_repository):
@@ -13,36 +14,29 @@ class AuthService:
         # Check if exists
         existing_user = await self.user_repository.get_user_by_email(user_data.email)
         if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered",
-            )
+            raise AppException("Email already registered", 409)
 
         # Hash pass
-        hashed_password = hash_password(user_data.password)
+        password_hash = hash_password(user_data.password)
 
         # Call repository to save user
         user = await self.user_repository.create_user(
             username=user_data.username,
             email=user_data.email,
-            password=hashed_password,
+            password_hash=password_hash,
         )
 
         return user
 
     async def login(self, credentials: UserLogin) -> Token:
         user = await self.user_repository.get_user_by_email(credentials.email)
+        print(f"user fetched for login: {user}")
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
-            )
+            raise AppException("Invalid credentials", 401)
 
         # check password
-        password = hash_password(credentials.password)
-        if user.password_hash != password:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
-            )
+        if not verify_password(credentials.password, user.password_hash):
+            raise AppException("Invalid credentials", 401)
 
         # Create JWT
         token_data = {
