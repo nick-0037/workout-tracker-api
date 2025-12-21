@@ -1,95 +1,82 @@
-from api.models.workout_plan import WorkoutPlanCreate, WorkoutPlanResponse
+from api.models.workout_plan import WorkoutPlanResponse
 from api.models.workout_plan_exercise import (
-    WorkoutPlanExerciseCreate,
     WorkoutPlanExerciseResponse,
 )
-from api.services.workout_service import WorkoutService
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 class WorkoutRepository:
     def __init__(self, db):
         self.db = db
 
-    async def get_all_workout_plans(self, user_id: int) -> List[WorkoutPlanResponse]:
-        cursor = self.db.execute(
+    async def get_all_workout_plans(self, user_id: int) -> List[Dict]:
+        async with self.db.execute(
             "SELECT id, user_id, name, description FROM workout_plans WHERE user_id = ?",
             (user_id,),
-        )
-        rows = cursor.fetchall()
+        ) as cursor:
+            rows = await cursor.fetchall()
 
-        return [
-            WorkoutPlanResponse(
-                id=row["id"],
-                user_id=row["user_id"],
-                name=row["name"],
-                description=row["description"],
-            )
-            for row in rows
-        ]
+        return [dict(row) for row in rows]
 
     async def get_workout_plan_by_id(
-        self, workout_id: int, user_id: int
-    ) -> Optional[WorkoutPlanResponse]:
-        cursor = self.db.execute(
+        self, workout_plan_id: int, user_id: int
+    ) -> Optional[Dict]:
+        async with self.db.execute(
             "SELECT * FROM workout_plans WHERE id = ? AND user_id = ?",
-            (
-                workout_id,
-                user_id,
-            ),
-        )
-        row = cursor.fetchone()
+            (workout_plan_id, user_id),
+        ) as cursor:
+            row = await cursor.fetchone()
 
-        if not row:
-            return None
-
-        return WorkoutPlanResponse(
-            id=row["id"],
-            user_id=row["user_id"],
-            name=row["name"],
-            description=row["description"],
-        )
+        return dict(row) if row else None
 
     async def create_workout_plan(
         self, user_id: int, name: str, description: Optional[str] = None
-    ) -> WorkoutPlanResponse:
-        cursor = self.db.execute(
+    ) -> Dict:
+        cursor = await self.db.execute(
             "INSERT INTO workout_plans (user_id, name, description) VALUES (?, ?, ?)",
             (user_id, name, description),
         )
-        self.db.commit()
-
+        await self.db.commit()
         new_id = cursor.lastrowid
 
-        return WorkoutPlanResponse(
-            id=new_id,
-            user_id=user_id,
-            name=name,
-            description=description,
-        )
+        return await self.get_workout_plan_by_id(new_id, user_id)
 
     async def update_workout_plan(
-        self, user_id: int, workout_plan_id: int, name: str, description: Optional[str]
-    ) -> Optional[WorkoutPlanResponse]:
-        self.db.execute(
+        self,
+        user_id: int,
+        workout_plan_id: int,
+        name: str,
+        description: Optional[str],
+    ) -> Optional[Dict]:
+        await self.db.execute(
             """
-        UPDATE workout_plans
-        SET name = ?, description = ?
-        WHERE id = ? AND user_id = ?
-        """,
-            (name, description, workout_plan_id, user_id),
+            UPDATE workout_plans
+            SET name = ?, description = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (
+                name,
+                description,
+                workout_plan_id,
+                user_id,
+            ),
         )
-        self.db.commit()
+        await self.db.commit()
 
         return await self.get_workout_plan_by_id(workout_plan_id, user_id)
 
     async def delete_workout_plan(self, workout_plan_id: int, user_id: int) -> bool:
-        cursor = self.db.execute(
-            "DELETE FROM workout_plans WHERE id = ? AND user_id = ?",
-            (workout_plan_id, user_id),
-        )
-        self.db.commit()
-        return cursor.rowcount > 0
+        cursor = None
+        try:
+            cursor = await self.db.execute(
+                "DELETE FROM workout_plans WHERE id = ? AND user_id = ?",
+                (workout_plan_id, user_id),
+            )
+            await self.db.commit()
+            return cursor.rowcount > 0
+        finally:
+            if cursor:
+                await cursor.close()
 
     async def add_exercise_to_plan(
         self,
@@ -98,35 +85,51 @@ class WorkoutRepository:
         sets: int,
         weight: float,
         reps: int,
-    ) -> WorkoutPlanExerciseResponse:
-        cursor = self.db.execute(
+    ) -> Dict:
+
+        cursor = await self.db.execute(
             """
             INSERT INTO workout_plan_exercises (workout_plan_id, exercise_id, sets, weight, reps)
             VALUES (?, ?, ?, ?, ?)
             """,
             (workout_plan_id, exercise_id, sets, weight, reps),
         )
-        self.db.commit()
-
+        await self.db.commit()
         new_id = cursor.lastrowid
-        return WorkoutPlanExerciseResponse(
-            id=new_id,
-            workout_plan_id=workout_plan_id,
-            exercise_id=exercise_id,
-            sets=sets,
-            weight=weight,
-            reps=reps,
-        )
+
+        return await self.get_exercise_in_plan_by_id(new_id)
 
     async def remove_exercise_from_plan(
         self, workout_plan_id: int, exercise_id: int
     ) -> bool:
-        cursor = self.db.execute(
+        cursor = await self.db.execute(
             """
             DELETE FROM workout_plan_exercises
             WHERE workout_plan_id = ? AND exercise_id = ?
             """,
             (workout_plan_id, exercise_id),
         )
-        self.db.commit()
+        await self.db.commit()
         return cursor.rowcount > 0
+
+    async def get_exercise_in_plan_by_id(self, wpe_id: int) -> Optional[Dict]:
+        """
+         Retrieve a workout plan exercise by its ID.
+        """
+        cursor = await self.db.execute(
+            """
+            SELECT 
+                wpe.*, 
+                e.name as exercise_name, 
+                e.category, 
+                e.muscle_group
+            FROM workout_plan_exercises wpe
+            JOIN exercises e ON wpe.exercise_id = e.id
+            WHERE wpe.id = ?
+            """,
+            (wpe_id,),
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+
+        return dict(row) if row else None
