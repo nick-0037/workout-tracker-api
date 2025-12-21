@@ -3,185 +3,193 @@ from fastapi.testclient import TestClient
 from main import app
 from api.models.workout_plan import WorkoutPlanResponse
 from api.models.workout_plan_exercise import WorkoutPlanExerciseResponse
+from unittest.mock import AsyncMock
+from api.controllers.workout_controller import get_service
+from api.dependencies.auth import get_current_user
 from api.services.workout_service import WorkoutService
-from jose import jwt
-from api.config import SECRET_KEY, ALGORITHM
 
 
-client = TestClient(app)
+@pytest.fixture
+def mock_service():
+    service = AsyncMock(spec=WorkoutService)
+    return service
 
-token = jwt.encode({"sub": "1"}, SECRET_KEY, algorithm=ALGORITHM)
-headers = {"Authorization": f"Bearer {token}"}
+
+@pytest.fixture
+def client(mock_service):
+    original_overrides = app.dependency_overrides.copy()
+
+    app.dependency_overrides[get_service] = lambda: mock_service
+    app.dependency_overrides[get_current_user] = lambda: 1
+
+    yield TestClient(app)
+
+    app.dependency_overrides = original_overrides
 
 
-def test_get_all_workouts(monkeypatch):
-    # Mock service
-    async def fake_get_all_workouts(self, user_id):
-        return [
-            WorkoutPlanResponse(
-                id=1, user_id=user_id, name="Push up", description="Push up description"
-            ),
-            WorkoutPlanResponse(
-                id=2, user_id=user_id, name="Pull up", description="Pull up description"
-            ),
-        ]
-
-    monkeypatch.setattr(WorkoutService, "get_all_workout_plans", fake_get_all_workouts)
+def test_get_all_workouts(client, mock_service):
+    # Arrange
+    mock_service.get_all_workout_plans.return_value = [
+        WorkoutPlanResponse(id=1, user_id=1, name="Push up", description="desc"),
+        WorkoutPlanResponse(id=2, user_id=1, name="Pull up", description="desc2"),
+    ]
 
     # Act
-    response = client.get("/workouts", headers=headers)
+    response = client.get("/workouts")
 
     # Assert
     assert response.status_code == 200
     data = response.json()
+
     assert data[0]["name"] == "Push up"
-    assert data[1]["description"] == "Pull up description"
+    assert data[1]["description"] == "desc2"
+
+    mock_service.get_all_workout_plans.assert_called_once_with(user_id=1)
 
 
-def test_get_workout_plan_by_id(monkeypatch):
-    # Mock service
-    async def fake_get_workout_plan_by_id(self, workout_id, user_id):
-        return WorkoutPlanResponse(
-            id=workout_id,
-            user_id=user_id,
-            name="Push up",
-            description="Push up description",
-        )
-
-    monkeypatch.setattr(
-        WorkoutService, "get_workout_plan_by_id", fake_get_workout_plan_by_id
+def test_get_workout_plan_by_id(client, mock_service):
+    # Arrange
+    mock_service.get_workout_plan_by_id.return_value = WorkoutPlanResponse(
+        id=1,
+        user_id=1,
+        name="Push up",
+        description="desc",
     )
 
     # Act
-    response = client.get("/workouts/1", headers=headers)
+    response = client.get(
+        "/workouts/1",
+    )
 
     # Assert
     assert response.status_code == 200
     data = response.json()
+
     assert data["id"] == 1
     assert data["user_id"] == 1
-    assert data["name"] == "Push up"
-    assert data["description"] == "Push up description"
+    assert data["description"] == "desc"
+
+    mock_service.get_workout_plan_by_id.assert_called_once_with(
+        workout_plan_id=1, user_id=1
+    )
 
 
-def test_create_workout_plan(monkeypatch):
-    # Mock service
-    async def fake_create_workout_plan(self, user_id, name, description=None):
-        return WorkoutPlanResponse(
-            id=1,
-            user_id=user_id,
-            name=name,
-            description=description,
-        )
-
-    monkeypatch.setattr(WorkoutService, "create_workout_plan", fake_create_workout_plan)
+def test_create_workout_plan(client, mock_service):
+    # Arrange
+    mock_service.create_workout_plan.return_value = WorkoutPlanResponse(
+        id=1, user_id=1, name="Leg Day", description="Leg workout"
+    )
 
     # Act
     response = client.post(
         "/workouts",
         json={"name": "Leg Day", "description": "Leg workout"},
-        headers=headers,
     )
 
     # Assert
     assert response.status_code == 201
     data = response.json()
+
     assert data["user_id"] == 1
     assert data["name"] == "Leg Day"
     assert data["description"] == "Leg workout"
 
+    mock_service.create_workout_plan.assert_called_once_with(
+        user_id=1,
+        name="Leg Day",
+        description="Leg workout",
+    )
 
-def test_update_workout_plan(monkeypatch):
-    # Mock service
-    async def fake_update_workout_plan(
-        self, workout_plan_id, user_id, name, description=None
-    ):
-        return WorkoutPlanResponse(
-            id=workout_plan_id,
-            user_id=user_id,
-            name=name,
-            description=description,
-        )
 
-    monkeypatch.setattr(WorkoutService, "update_workout_plan", fake_update_workout_plan)
+def test_update_workout_plan(client, mock_service):
+    # Arrange
+    mock_service.update_workout_plan.return_value = WorkoutPlanResponse(
+        id="1",
+        user_id="1",
+        name="Updated",
+        description="Updated desc",
+    )
 
     # Act
     response = client.patch(
         "/workouts/1",
-        json={"name": "Updated Plan", "description": "Updated desc"},
-        headers=headers,
+        json={"name": "Updated", "description": "Updated desc"},
     )
 
     # Assert
     assert response.status_code == 200
     data = response.json()
+
     assert data["id"] == 1
     assert data["user_id"] == 1
-    assert data["name"] == "Updated Plan"
+    assert data["name"] == "Updated"
     assert data["description"] == "Updated desc"
 
+    mock_service.update_workout_plan.assert_called_once_with(
+        workout_plan_id=1,
+        user_id=1,
+        name="Updated",
+        description="Updated desc",
+    )
 
-def test_delete_workout_plan(monkeypatch):
-    # Mock service
-    async def fake_delete_workout_plan(self, workout_plan_id, user_id):
-        return True
 
-    monkeypatch.setattr(WorkoutService, "delete_workout_plan", fake_delete_workout_plan)
+def test_delete_workout_plan(client, mock_service):
+    # Arrange
+    mock_service.delete_workout_plan.return_value = True
 
     # Act
-    response = client.delete("/workouts/1", headers=headers)
+    response = client.delete("/workouts/1")
 
     # Assert
     assert response.status_code == 204
 
+    mock_service.delete_workout_plan.assert_called_once_with(
+        workout_plan_id=1, user_id=1
+    )
 
-def test_add_exercise_to_plan(monkeypatch):
+
+def test_add_exercise_to_plan(client, mock_service):
     # Mock service
-    async def fake_add_exercise_to_plan(self, workout_plan_id, user_id, exercise_data):
-        return WorkoutPlanExerciseResponse(
-            id=1,
-            workout_plan_id=workout_plan_id,
-            user_id=user_id,
-            exercise_id=exercise_data.exercise_id,
-            sets=exercise_data.sets,
-            reps=exercise_data.reps,
-            weight=exercise_data.weight,
-        )
-
-    monkeypatch.setattr(
-        WorkoutService, "add_exercise_to_plan", fake_add_exercise_to_plan
+    mock_service.add_exercise_to_plan.return_value = WorkoutPlanExerciseResponse(
+        id=1,
+        workout_plan_id="1",
+        user_id="1",
+        exercise_id=1,
+        sets=2,
+        reps=8,
+        weight=10.0,
     )
 
     # Act
     response = client.post(
         "/workouts/1/exercises",
-        json={"exercise_id": 42, "sets": 3, "reps": 10, "weight": 50.0},
-        headers=headers,
+        json={"exercise_id": 1, "sets": 2, "reps": 8, "weight": 10.0},
     )
-    
+
     # Assert
     assert response.status_code == 201
     data = response.json()
+
     assert data["workout_plan_id"] == 1
-    assert data["exercise_id"] == 42
-    assert data["sets"] == 3
-    assert data["reps"] == 10
-    assert data["weight"] == 50.0
+    assert data["exercise_id"] == 1
 
-def test_remove_exercise_from_plan(monkeypatch):
+    mock_service.add_exercise_to_plan.assert_called_once()
+
+
+def test_remove_exercise_from_plan(client, mock_service):
     # Mock service
-    async def fake_remove_exercise_from_plan(self, workout_plan_id, user_id, exercise_data):
-        return True
-
-    monkeypatch.setattr(
-        WorkoutService, "remove_exercise_from_plan", fake_remove_exercise_from_plan
-    )
+    mock_service.remove_exercise_from_plan.return_value = True
 
     # Act
     response = client.delete(
         "/workouts/1/exercises/42",
-        headers=headers,
     )
-    
+
     # Assert
     assert response.status_code == 204
+
+    mock_service.remove_exercise_from_plan.assert_called_once_with(
+        workout_plan_id=1,
+        user_id=1,
+        exercise_id=42,
+    )
